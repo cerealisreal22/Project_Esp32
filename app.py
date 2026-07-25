@@ -5,7 +5,7 @@ from eye_utils import get_ear_from_image
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 
-DATA_DIR = os.environ.get("DATA_DIR", "/data")
+DATA_DIR = os.environ.get("DATA_DIR", "./data")
 os.makedirs(DATA_DIR, exist_ok=True)
 PRESET_FILE = os.path.join(DATA_DIR, "presets.json")
 
