@@ -1,3 +1,4 @@
+import threading
 import numpy as np
 import mediapipe as mp
 import cv2
@@ -9,6 +10,8 @@ face_mesh = mp_face_mesh.FaceMesh(
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5,
 )
+
+_lock = threading.Lock()   # เพิ่มบรรทัดนี้ - กันการเรียก face_mesh ซ้อนกันจากหลาย thread
 
 LEFT_EYE = [362, 385, 387, 263, 373, 380]
 RIGHT_EYE = [33, 160, 158, 133, 153, 144]
@@ -28,7 +31,10 @@ def _ear(landmarks, idx, w, h):
 def get_ear_from_image(img_bgr):
     h, w = img_bgr.shape[:2]
     rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    result = face_mesh.process(rgb)
+
+    with _lock:   # เพิ่มบรรทัดนี้ - บังคับให้ประมวลผลทีละภาพเท่านั้น
+        result = face_mesh.process(rgb)
+
     if not result.multi_face_landmarks:
         return None
     lm = result.multi_face_landmarks[0].landmark
