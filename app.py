@@ -1,13 +1,12 @@
-# ✅ แบบใหม่ (ดึง face_mesh โดยตรง)
 import cv2
 import numpy as np
 import time
 import json
 from flask import Flask, Response, request, render_template_string, jsonify
 
-# Import โมดูลย่อยของ MediaPipe โดยตรง
+# ✅ Import solutions โดยตรง (ไม่มีคำว่า .python)
 import mediapipe as mp
-from mediapipe.python.solutions import face_mesh as mp_face_mesh
+from mediapipe.solutions import face_mesh as mp_face_mesh
 
 app = Flask(__name__)
 
