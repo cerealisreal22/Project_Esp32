@@ -1,14 +1,17 @@
+# ✅ แบบใหม่ (ดึง face_mesh โดยตรง)
 import cv2
 import numpy as np
-import mediapipe as mp
 import time
 import json
 from flask import Flask, Response, request, render_template_string, jsonify
 
+# Import โมดูลย่อยของ MediaPipe โดยตรง
+import mediapipe as mp
+from mediapipe.python.solutions import face_mesh as mp_face_mesh
+
 app = Flask(__name__)
 
 # MediaPipe Face Mesh Setup
-mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(
     max_num_faces=1,
     refine_landmarks=True,
