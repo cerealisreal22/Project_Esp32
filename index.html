@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>Drowsiness Detection</title>
+<style>
+  body{font-family:sans-serif;max-width:700px;margin:20px auto;padding:0 16px}
+  .tab-btn{padding:8px 16px;margin-right:6px;cursor:pointer;border:1px solid #ccc;background:#f5f5f5}
+  .tab-btn.active{background:#333;color:#fff}
+  .panel{display:none;margin-top:16px}
+  .panel.active{display:block}
+  .preset-card{border:1px solid #ddd;padding:12px;margin:8px 0;border-radius:8px}
+  .alarm{background:#ffdddd;border:2px solid red}
+  img{max-width:100%;border-radius:8px}
+  button{padding:8px 14px;cursor:pointer}
+</style>
+</head>
+<body>
+<h2>ระบบตรวจจับคนหลับใน</h2>
+<div>
+  <span class="tab-btn active" onclick="showTab('presets')">Preset</span>
+  <span class="tab-btn" onclick="showTab('train')">เทรน/คาลิเบรตใหม่</span>
+  <span class="tab-btn" onclick="showTab('dashboard')">Dashboard (ขับรถ)</span>
+</div>
+
+<!-- PRESETS -->
+<div id="presets" class="panel active">
+  <h3>เลือก Preset (สูงสุด 3 คน)</h3>
+  <div id="presetList"></div>
+</div>
+
+<!-- TRAIN -->
+<div id="train" class="panel">
+  <h3>คาลิเบรตค่าตาใหม่</h3>
+  <p>ชื่อ preset: <input id="presetName" placeholder="เช่น คนขับ A"></p>
+  <p>Slot: <select id="presetSlot"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></p>
+  <p id="trainStatus">1) กดเริ่ม แล้วมองกล้อง "ลืมตา" ปกติ ค้างไว้ 5 วิ</p>
+  <button onclick="startTrain()">เริ่มคาลิเบรต</button>
+  <button onclick="nextPhase()">ไปขั้นตอน "หลับตา"</button>
+  <button onclick="finishTrain()">บันทึก Preset</button>
+  <p>ตัวอย่างที่เก็บได้: เปิด <span id="cOpen">0</span> / ปิด <span id="cClosed">0</span></p>
+  <img id="trainPreview" src="/api/frame" width="320">
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard" class="panel">
+  <h3>สถานะขณะขับ</h3>
+  <img id="livePreview" src="/api/frame" width="320">
+  <div id="statBox" class="preset-card">
+    <p>สถานะตา: <b id="eyeState">-</b></p>
+    <p>% หลับตา (rolling): <b id="closedPercent">0</b>%</p>
+    <p>หลับตาต่อเนื่อง: <b id="closedDuration">0</b> วินาที</p>
+    <p id="alarmText"></p>
+  </div>
+</div>
+
+<script>
+function showTab(id){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+
+async function loadPresets(){
+  const res = await fetch('/api/presets');
+  const data = await res.json();
+  const box = document.getElementById('presetList');
+  box.innerHTML = '';
+  data.presets.forEach(p=>{
+    const div = document.createElement('div');
+    div.className = 'preset-card';
+    div.innerHTML = `<b>${p.name}</b> (slot ${p.id})
+      <br>threshold EAR: ${p.ear_threshold.toFixed(3)}
+      <br><button onclick="selectPreset(${p.id})">ใช้งาน preset นี้</button>
+      <button onclick="deletePreset(${p.id})">ลบ</button>`;
+    if (data.active_id === p.id) div.style.borderColor = 'green';
+    box.appendChild(div);
+  });
+}
+async function selectPreset(id){
+  await fetch('/api/preset/select', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id})});
+  loadPresets();
+}
+async function deletePreset(id){
+  await fetch('/api/preset/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id})});
+  loadPresets();
+}
+
+// ---- Train (ใช้ webcam browser เพื่อคาลิเบรต ง่ายกว่าดึงจาก ESP32 โดยตรง) ----
+let stream, trainTimer;
+async function startTrain(){
+  await fetch('/api/train/start', {method:'POST'});
+  document.getElementById('trainStatus').innerText = 'กำลังเก็บค่า "ลืมตา" — มองกล้องตรงๆ';
+  const video = document.createElement('video');
+  stream = await navigator.mediaDevices.getUserMedia({video:true});
+  video.srcObject = stream; video.play();
+  const canvas = document.createElement('canvas');
+  trainTimer = setInterval(async ()=>{
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video,0,0);
+    canvas.toBlob(async blob=>{
+      const fd = new FormData(); fd.append('image', blob, 'f.jpg');
+      const r = await fetch('/api/train/frame', {method:'POST', body: fd});
+      const j = await r.json();
+      document.getElementById('cOpen').innerText = j.count_open || 0;
+      document.getElementById('cClosed').innerText = j.count_closed || 0;
+    }, 'image/jpeg');
+  }, 500);
+}
+async function nextPhase(){
+  await fetch('/api/train/phase', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({phase:'closed'})});
+  document.getElementById('trainStatus').innerText = 'กำลังเก็บค่า "หลับตา" — หลับตาค้างไว้';
+}
+async function finishTrain(){
+  clearInterval(trainTimer);
+  if (stream) stream.getTracks().forEach(t=>t.stop());
+  const name = document.getElementById('presetName').value || 'Preset';
+  const id = parseInt(document.getElementById('presetSlot').value);
+  const r = await fetch('/api/train/save', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({name, id, percent_threshold:70, duration_threshold_sec:10})});
+  const j = await r.json();
+  if (j.error) alert(j.error); else { alert('บันทึกสำเร็จ'); loadPresets(); }
+}
+
+// ---- Dashboard polling ----
+setInterval(async ()=>{
+  const r = await fetch('/api/stats'); const s = await r.json();
+  document.getElementById('eyeState').innerText = s.eye_state;
+  document.getElementById('closedPercent').innerText = s.closed_percent;
+  document.getElementById('closedDuration').innerText = s.closed_duration;
+  const box = document.getElementById('statBox');
+  const alarmText = document.getElementById('alarmText');
+  if (s.alarm) { box.classList.add('alarm'); alarmText.innerText = '⚠️ ตรวจพบอาการหลับใน!'; }
+  else { box.classList.remove('alarm'); alarmText.innerText = ''; }
+  document.getElementById('livePreview').src = '/api/frame?t=' + Date.now();
+  document.getElementById('trainPreview').src = '/api/frame?t=' + Date.now();
+}, 1000);
+
+loadPresets();
+</script>
+</body>
+</html>
